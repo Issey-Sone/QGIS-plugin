@@ -32,33 +32,45 @@ from qgis.PyQt.QtWidgets import *
 from .resources import *
 from qgis.core import QgsVectorLayer, QgsProject
 
+from PyQt5.QtWidgets import QAction, QMessageBox
+from PyQt5.QtGui import QIcon
 
-class Foo():
+class Foo:
     """QGIS Plugin Implementation."""
+    
     def __init__(self, iface):
-    # save reference to the QGIS interface
+        # Save reference to the QGIS interface
         self.iface = iface
 
     def initGui(self):
-    # create action that will start plugin configuration
-        self.action = QAction(QIcon("testplug:icon.png"),
-                            "Foo plugin",
-                            self.iface.mainWindow())
+        # Create action that will start plugin configuration
+        self.action = QAction(QIcon(":/plugins/foo/icon.png"),
+                              "Foo plugin",
+                              self.iface.mainWindow())
         self.action.setObjectName("testAction")
         self.action.setWhatsThis("Configuration for test plugin")
         self.action.setStatusTip("This is status tip")
         self.action.triggered.connect(self.run)
+        self.action.triggered.connect(self.show_message)
 
-        # add toolbar button and menu item
+        # Add toolbar button and menu item
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToMenu("&Test plugins", self.action)
 
-        # connect to signal renderComplete which is emitted when canvas
+        # Connect to signal renderComplete which is emitted when canvas
         # rendering is done
         self.iface.mapCanvas().renderComplete.connect(self.renderTest)
 
         # Connect to current active layer (for testing purposes)
         self.iface.currentLayerChanged.connect(self.layerChanged)
+
+    def show_message(self):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setText("This is a pop-up message!")
+        msg.setWindowTitle("Message")  # Corrected typo
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
 
     def unload(self):
         # Remove the plugin menu item and icon
@@ -89,13 +101,12 @@ class Foo():
 
 
 
-
     def run(self):
-        # create and show a configuration dialog or something similar
+        # Create and show a configuration dialog or something similar
         print("TestPlugin: run called!")
 
     def renderTest(self, painter):
-        # use painter for drawing to map canvas
+        # Use painter for drawing to map canvas
         print("TestPlugin: renderTest called!")
     
 
