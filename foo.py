@@ -33,43 +33,33 @@ from .resources import *
 
 from PyQt5.QtWidgets import QAction
 from PyQt5.QtGui import QIcon
+from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.core import QgsVectorLayer
 
 class Foo:
     """QGIS Plugin Implementation."""
     
     def __init__(self, iface):
-        # Save reference to the QGIS interface
         self.iface = iface
-        self.layer = self.iface.mapCanvas().currentLayer()  # Initialize layer to current layer in map canvas
+        self.layer = self.iface.mapCanvas().currentLayer()
 
     def initGui(self):
-        # Create action that will start plugin configuration
-        self.action = QAction(
-            QIcon("testplug:icon.png"),
-            "Foo plugin",
-            self.iface.mainWindow()
-        )
+        self.action = QAction(QIcon("testplug:icon.png"), "Foo plugin", self.iface.mainWindow())
         self.action.triggered.connect(self.run)
-
-        # Add toolbar button and menu item
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToMenu("&Test plugins", self.action)
 
-        # Connect to current active layer in the map canvas (for testing purposes)
         self.iface.mapCanvas().currentLayerChanged.connect(self.layerChanged)
 
-        # If there's a current layer and it's editable, connect the beforeCommitChanges signal
+        # Ensure the correct layer is being connected
         if self.layer and isinstance(self.layer, QgsVectorLayer) and self.layer.isEditable():
             self.layer.beforeCommitChanges.connect(self.beforeCommitChanges)
             print(f"Connected to layer: {self.layer.name()}")
 
     def unload(self):
-        # Remove the plugin menu item and icon
         self.iface.removePluginMenu("&Test plugins", self.action)
         self.iface.removeToolBarIcon(self.action)
 
-        # Disconnect from current layer change signal
         try:
             self.iface.mapCanvas().currentLayerChanged.disconnect(self.layerChanged)
         except TypeError:
@@ -82,10 +72,9 @@ class Foo:
                 pass
 
     def run(self):
-        print(self.layer == None)
+        print(self.layer.featureCount())
 
     def layerChanged(self, layer):
-        # Disconnect from the previous layer's signals if any
         if self.layer:
             try:
                 self.layer.beforeCommitChanges.disconnect(self.beforeCommitChanges)
@@ -102,15 +91,8 @@ class Foo:
     def beforeCommitChanges(self):
         print("beforeCommitChanges signal triggered.")
 
-        # Get the current layer in the map canvas
-        active_layer = self.iface.mapCanvas().currentLayer()
-
-        if not isinstance(active_layer, QgsVectorLayer):
-            print("Active layer is not a vector layer.")
-            return
-
-        if active_layer.id() != self.layer.id():
-            print("Active layer and editing layer do not match.")
+        if not isinstance(self.layer, QgsVectorLayer):
+            print("Layer is not a vector layer.")
             return
 
         if not self.layer.isEditable():
@@ -130,3 +112,21 @@ class Foo:
                 1 for attrs in changed_attributes.values() if any(v is None for v in attrs.values())
             )
             print(f"Number of deleted attributes: {num_deleted_attributes}")
+
+            # Show a warning if too many features are being deleted
+            if num_deleted_features > 10:  # Example condition
+                response = QMessageBox.warning(
+                    None,
+                    "Warning",
+                    f"Too many features are being deleted ({num_deleted_features}). Do you want to continue?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if response == QMessageBox.No:
+                    print("User canceled the commit.")
+                    # Roll back the changes
+                    edit_buffer.rollBack()
+                    return
+
+        print("Commit will proceed.")
