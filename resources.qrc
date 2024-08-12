@@ -1,5 +1,5 @@
 <RCC>
     <qresource prefix="/plugins/foo" >
-        <file>sos.png</file>
+        <file>sos_24.png</file>
     </qresource>
 </RCC>
