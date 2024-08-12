@@ -27,56 +27,106 @@
 # from qgis.PyQt.QtWidgets import QAction, QMessageBo
 
 # Initialize Qt resources from file resources.py
-from PyQt5.QtWidgets import QAction, QMessageBox
+from qgis.PyQt.QtGui import *
+from qgis.PyQt.QtWidgets import *
+from .resources import *
+
+from PyQt5.QtWidgets import QAction
 from PyQt5.QtGui import QIcon
+from qgis.PyQt.QtWidgets import QMessageBox
+from qgis.core import QgsVectorLayer
 
 class Foo:
     """QGIS Plugin Implementation."""
     
     def __init__(self, iface):
-        # Save reference to the QGIS interface
         self.iface = iface
+        self.layer = self.iface.mapCanvas().currentLayer()
 
     def initGui(self):
-        # Create action that will start plugin configuration
-        self.action = QAction(QIcon(":/plugins/foo/icon.png"),
-                              "Foo plugin",
-                              self.iface.mainWindow())
-        self.action.setObjectName("testAction")
-        self.action.setWhatsThis("Configuration for test plugin")
-        self.action.setStatusTip("This is status tip")
+        self.action = QAction(QIcon("testplug:icon.png"), "Foo plugin", self.iface.mainWindow())
         self.action.triggered.connect(self.run)
-        self.action.triggered.connect(self.show_message)
-
-        # Add toolbar button and menu item
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToMenu("&Test plugins", self.action)
 
-        # Connect to signal renderComplete which is emitted when canvas
-        # rendering is done
-        self.iface.mapCanvas().renderComplete.connect(self.renderTest)
+        self.iface.mapCanvas().currentLayerChanged.connect(self.layerChanged)
 
-    def show_message(self):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setText("This is a pop-up message!")
-        msg.setWindowTitle("Message")  # Corrected typo
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+        # Ensure the correct layer is being connected
+        if self.layer and isinstance(self.layer, QgsVectorLayer) and self.layer.isEditable():
+            self.layer.beforeCommitChanges.connect(self.beforeCommitChanges)
+            print(f"Connected to layer: {self.layer.name()}")
 
     def unload(self):
-        print("SOMETHING HERE")
-        # Remove the plugin menu item and icon
         self.iface.removePluginMenu("&Test plugins", self.action)
         self.iface.removeToolBarIcon(self.action)
 
-        # Disconnect from signal of the canvas
-        self.iface.mapCanvas().renderComplete.disconnect(self.renderTest)
+        try:
+            self.iface.mapCanvas().currentLayerChanged.disconnect(self.layerChanged)
+        except TypeError:
+            pass
+
+        if self.layer:
+            try:
+                self.layer.beforeCommitChanges.disconnect(self.beforeCommitChanges)
+            except TypeError:
+                pass
 
     def run(self):
-        # Create and show a configuration dialog or something similar
-        print("TestPlugin: run called!")
+        print(self.layer.featureCount())
 
-    def renderTest(self, painter):
-        # Use painter for drawing to map canvas
-        print("TestPlugin: renderTest called!")
+    def layerChanged(self, layer):
+        if self.layer:
+            try:
+                self.layer.beforeCommitChanges.disconnect(self.beforeCommitChanges)
+            except TypeError:
+                pass
+
+        self.layer = layer
+
+        if isinstance(self.layer, QgsVectorLayer):
+            if self.layer.isEditable():
+                self.layer.beforeCommitChanges.connect(self.beforeCommitChanges)
+                print(f"Connected to layer: {self.layer.name()}")
+
+    def beforeCommitChanges(self):
+        print("beforeCommitChanges signal triggered.")
+
+        if not isinstance(self.layer, QgsVectorLayer):
+            print("Layer is not a vector layer.")
+            return
+
+        if not self.layer.isEditable():
+            print("The layer is not currently editable.")
+            return
+
+        edit_buffer = self.layer.editBuffer()
+        if edit_buffer:
+            # Count deleted features
+            deleted_features = edit_buffer.deletedFeatureIds()
+            num_deleted_features = len(deleted_features)
+            print(f"Number of deleted features: {num_deleted_features}")
+
+            # Analyze attribute changes
+            changed_attributes = edit_buffer.changedAttributeValues()
+            num_deleted_attributes = sum(
+                1 for attrs in changed_attributes.values() if any(v is None for v in attrs.values())
+            )
+            print(f"Number of deleted attributes: {num_deleted_attributes}")
+
+            # Show a warning if too many features are being deleted
+            if num_deleted_features > 10:  # Example condition
+                response = QMessageBox.warning(
+                    None,
+                    "Warning",
+                    f"Too many features are being deleted ({num_deleted_features}). Do you want to continue?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if response == QMessageBox.No:
+                    print("User canceled the commit.")
+                    # Roll back the changes
+                    edit_buffer.rollBack()
+                    return
+
+        print("Commit will proceed.")
