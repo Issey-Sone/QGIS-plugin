@@ -31,9 +31,9 @@ from qgis.PyQt.QtGui import *
 from qgis.PyQt.QtWidgets import *
 from .resources import *
 
-from PyQt5.QtWidgets import QAction
 from PyQt5.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QMessageBox
+from qgis.PyQt.QtWidgets import QAction, QDialog, QVBoxLayout, QLabel, QSlider, QPushButton, QMessageBox
+from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsVectorLayer
 
 class Foo:
@@ -42,19 +42,20 @@ class Foo:
     def __init__(self, iface):
         self.iface = iface
         self.layer = self.iface.mapCanvas().currentLayer()
+        self.threshold = 10  # Default threshold
 
     def initGui(self):
-        self.action = QAction(QIcon("testplug:icon.png"), "Foo plugin", self.iface.mainWindow())
+        self.action = QAction(QIcon(":plugins/foo/sos_24.png"), "Foo plugin", self.iface.mainWindow())
         self.action.triggered.connect(self.run)
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToMenu("&Test plugins", self.action)
 
         self.iface.mapCanvas().currentLayerChanged.connect(self.layerChanged)
 
-        # Ensure the correct layer is being connected
         if self.layer and isinstance(self.layer, QgsVectorLayer) and self.layer.isEditable():
             self.layer.beforeCommitChanges.connect(self.beforeCommitChanges)
             print(f"Connected to layer: {self.layer.name()}")
+            self.printFeatureCount()
 
     def unload(self):
         self.iface.removePluginMenu("&Test plugins", self.action)
@@ -72,7 +73,7 @@ class Foo:
                 pass
 
     def run(self):
-        print(self.layer.featureCount())
+        self.showSettingsDialog()
 
     def layerChanged(self, layer):
         if self.layer:
@@ -84,9 +85,9 @@ class Foo:
         self.layer = layer
 
         if isinstance(self.layer, QgsVectorLayer):
-            if self.layer.isEditable():
-                self.layer.beforeCommitChanges.connect(self.beforeCommitChanges)
-                print(f"Connected to layer: {self.layer.name()}")
+            self.layer.beforeCommitChanges.connect(self.beforeCommitChanges)
+            print(f"Connected to layer: {self.layer.name()}")
+            self.printFeatureCount()
 
     def beforeCommitChanges(self):
         print("beforeCommitChanges signal triggered.")
@@ -101,32 +102,70 @@ class Foo:
 
         edit_buffer = self.layer.editBuffer()
         if edit_buffer:
-            # Count deleted features
             deleted_features = edit_buffer.deletedFeatureIds()
             num_deleted_features = len(deleted_features)
             print(f"Number of deleted features: {num_deleted_features}")
 
-            # Analyze attribute changes
             changed_attributes = edit_buffer.changedAttributeValues()
             num_deleted_attributes = sum(
                 1 for attrs in changed_attributes.values() if any(v is None for v in attrs.values())
             )
             print(f"Number of deleted attributes: {num_deleted_attributes}")
 
-            # Show a warning if too many features are being deleted
-            if num_deleted_features > 10:  # Example condition
+            if num_deleted_features > self.threshold:
                 response = QMessageBox.warning(
                     None,
                     "Warning",
-                    f"Too many features are being deleted ({num_deleted_features}). Do you want to continue?",
+                    f"Too many features are being deleted ({num_deleted_features}). "
+                    f"Threshold is {self.threshold}. Do you want to continue?",
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
                 )
                 
                 if response == QMessageBox.No:
                     print("User canceled the commit.")
-                    # Roll back the changes
                     edit_buffer.rollBack()
                     return
 
         print("Commit will proceed.")
+
+    def printFeatureCount(self):
+        if self.layer:
+            feature_count = self.layer.featureCount()
+            print(f"The layer '{self.layer.name()}' has {feature_count} features.")
+
+    def showSettingsDialog(self):
+        # Create a dialog window for settings
+        dialog = QDialog()
+        dialog.setWindowTitle("Settings")
+        
+        layout = QVBoxLayout()
+
+        label = QLabel(f"Set threshold for deleted features: {self.threshold}")
+        layout.addWidget(label)
+
+        slider = QSlider(Qt.Horizontal)
+        slider.setMinimum(1)
+        slider.setMaximum(100)
+        slider.setValue(self.threshold)
+        slider.setTickPosition(QSlider.TicksBelow)
+        slider.setTickInterval(10)
+        layout.addWidget(slider)
+
+        apply_button = QPushButton("Apply")
+        layout.addWidget(apply_button)
+
+        dialog.setLayout(layout)
+
+        # Update the label as the slider moves
+        slider.valueChanged.connect(lambda: label.setText(f"Set threshold for deleted features: {slider.value()}"))
+
+        # Apply the new threshold value when the button is clicked
+        apply_button.clicked.connect(lambda: self.setThreshold(slider.value(), dialog))
+
+        dialog.exec_()
+
+    def setThreshold(self, value, dialog):
+        self.threshold = value
+        print(f"Threshold set to: {self.threshold}")
+        dialog.accept()
